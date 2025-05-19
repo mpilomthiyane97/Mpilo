@@ -1,0 +1,4 @@
+query,embedding_tokens,prompt_tokens,completion_tokens,total_llm_tokens,embedding_cost_usd,prompt_cost_usd,completion_cost_usd,total_cost_usd
+how many policies are  in the handbook?,18712,28484,1020,29504,0.001871,0.042726,0.00204,0.046637
+who wrote this handbook?,18717,34894,1056,35950,0.001872,0.052341,0.002112,0.056325
+what are Grounds for Disciplinary Action?,18726,43337,1482,44819,0.001873,0.065006,0.002964,0.069842
