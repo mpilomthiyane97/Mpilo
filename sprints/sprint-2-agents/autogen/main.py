@@ -1,8 +1,12 @@
 import asyncio
-from agent import chat_with_assistant
+from agent import assistant, model_client
+from autogen_agentchat.ui import Console
 
 if __name__ == "__main__":
-    city = input("📍 Enter your city: ").strip()
-    prompt = f"Suggest an outfit the user should wear for {city}'s weather using current weather."
-    response = asyncio.run(chat_with_assistant(prompt))
-    print(response)
+    async def main():
+        city = input("📍 Enter your city: ").strip()
+        task = f"Suggest an outfit the user should wear for {city}'s weather using current weather."
+        await Console(assistant.run_stream(task=task))
+        await model_client.close()
+
+    asyncio.run(main())
