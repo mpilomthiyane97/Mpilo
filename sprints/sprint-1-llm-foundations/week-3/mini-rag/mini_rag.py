@@ -1,5 +1,8 @@
+#Load environment variables from .env (e.g., OpenAI API key)
 import os
 from dotenv import load_dotenv
+
+#Import core components from LlamaIndex
 from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
@@ -15,54 +18,60 @@ from llama_index.core.callbacks import CallbackManager, TokenCountingHandler
 import tiktoken
 import pandas as pd
 
-# Load .env
+#Load environment variables and set OpenAI API key
 load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
-# Setup tokenizer callback
+#Setup callback for token counting (used for cost monitoring)
 token_counter = TokenCountingHandler(
     tokenizer=tiktoken.encoding_for_model("gpt-3.5-turbo").encode
 )
 callback_manager = CallbackManager([token_counter])
 
-# Settings
+#Configure LlamaIndex global settings
 Settings.llm = OpenAI(model="gpt-3.5-turbo")
 Settings.embed_model = OpenAIEmbedding()
 Settings.callback_manager = callback_manager
 
-# Load docs
+#Load local documents from /data directory
 print("🔍 Loading documents ...")
 documents = SimpleDirectoryReader("./data", recursive=True).load_data()
 
-# Parse & embed
+# Here I split docs into chunks and embed them for retrieval
 print("🧠 Indexing documents ...")
 pipeline = IngestionPipeline(transformations=[SentenceSplitter(), Settings.embed_model])
-nodes = pipeline.run(documents=documents)
+nodes = pipeline.run(documents=documents) #Run the ingestion pipeline: splits documents into sentences, generates 
+#embeddings for each chunk(node)
 
-# Store context
+#  Store vector and keyword indexes in memory
 storage_context = StorageContext.from_defaults()
-vector_index = VectorStoreIndex(nodes, storage_context=storage_context)
-keyword_index = KeywordTableIndex(nodes)
+vector_index = VectorStoreIndex(nodes, storage_context=storage_context) # Create a vector index for semantic search 
+#using embeddings(supports similarity-based retrieval)
+keyword_index = KeywordTableIndex(nodes) #Create a keyword table index for keyword-based search (supports exact term matching)
 
-# Query engines
-vector_engine = vector_index.as_query_engine(similarity_top_k=3)
-keyword_engine = keyword_index.as_query_engine(similarity_top_k=3)
+#Setup query engines for both indexes
+vector_engine = vector_index.as_query_engine(similarity_top_k=3) #Create a query engine from the vector index that retrieves 
+#the top 3 most semantically similar nodes
+keyword_engine = keyword_index.as_query_engine(similarity_top_k=3)#Create a query engine from the keyword index that retrieves 
+#the top 3 most relevant keyword matches
 
 print("\n✅ Hybrid Mini-RAG is ready! Type your question below.\n")
 
+#Track token usage + costs
 csv_log = []
 
+# 💬 Interactive loop for user queries
 while True:
     user_query = input("You: ")
     if user_query.lower() in ["exit", "quit"]:
         print("👋 Goodbye!")
         break
 
-    # Run both retrievers
+    # 🔍 Run both keyword and vector-based retrieval
     keyword_response = keyword_engine.query(user_query)
     vector_response = vector_engine.query(user_query)
 
-    # Combine (basic hybrid by concatenation here; customize as needed)
+    # 🧩 Combine answers from both retrieval engines
     combined_answer = (
         f"[Keyword Match]\n{keyword_response.response}\n\n"
         f"[Vector Match]\n{vector_response.response}"
@@ -70,7 +79,7 @@ while True:
 
     print("\n📄 Answer:\n", combined_answer)
 
-    # Print sources for Keyword Match
+    #Show sources for keyword-based match
     print("\n📚 Sources for Keyword Match:")
     for node in getattr(keyword_response, "source_nodes", []):
         file_path = node.metadata.get("file_path", "Unknown")
@@ -78,7 +87,7 @@ while True:
         score_display = f"{score:.2f}" if score is not None else "N/A"
         print(f" - {file_path} (score: {score_display})")
 
-    # Print sources for Vector Match
+    #Show sources for vector-based match
     print("\n📚 Sources for Vector Match:")
     for node in getattr(vector_response, "source_nodes", []):
         file_path = node.metadata.get("file_path", "Unknown")
@@ -86,25 +95,24 @@ while True:
         score_display = f"{score:.2f}" if score is not None else "N/A"
         print(f" - {file_path} (score: {score_display})")
 
-    # Get token counts
+    #Token usage tracking
     embedding_tokens = token_counter.total_embedding_token_count
     prompt_tokens = token_counter.prompt_llm_token_count
     completion_tokens = token_counter.completion_llm_token_count
     total_llm_tokens = token_counter.total_llm_token_count
 
-    # === Calculate Costs ===
-    # Prices per 1K tokens
-    EMBEDDING_COST_PER_1K = 0.0001  # $0.0001 per 1K tokens
-    PROMPT_COST_PER_1K = 0.0015     # GPT-3.5 Turbo prompt cost
-    COMPLETION_COST_PER_1K = 0.002  # GPT-3.5 Turbo completion cost
+    #Pricing based on OpenAI's rates (per 1K tokens)
+    EMBEDDING_COST_PER_1K = 0.0001
+    PROMPT_COST_PER_1K = 0.0015
+    COMPLETION_COST_PER_1K = 0.002
 
-    # Calculate actual cost
+    #Calculate actual cost
     embedding_cost = (embedding_tokens / 1000) * EMBEDDING_COST_PER_1K
     prompt_cost = (prompt_tokens / 1000) * PROMPT_COST_PER_1K
     completion_cost = (completion_tokens / 1000) * COMPLETION_COST_PER_1K
     total_cost = embedding_cost + prompt_cost + completion_cost
 
-    # Log entry with cost
+    #Log query, tokens, and cost to memory
     log_entry = {
         "query": user_query,
         "embedding_tokens": embedding_tokens,
@@ -119,10 +127,10 @@ while True:
     csv_log.append(log_entry)
 
     print("\n📊 Token usage logged.")
-    print(f"💰 Total cost this query: ${total_cost:.6f}")
+    print(f"💰 Total cost on this query: ${total_cost:.6f}")
     print("-" * 50)
 
-# Save cost log on exit
+#Save token usage log to CSV file on exit
 df = pd.DataFrame(csv_log)
 df.to_csv("token_usage_log.csv", index=False)
 print("✅ Token usage saved to token_usage_log.csv")
